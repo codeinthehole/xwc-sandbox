@@ -22,7 +22,7 @@ class Configuration
         $tb = new TreeBuilder();
 
         return $tb
-            ->root('security:acl', 'array')
+            ->root('security', 'array')
                 ->scalarNode('connection')->end()
                 ->scalarNode('cache')->end()
             ->end()
@@ -34,7 +34,7 @@ class Configuration
         $tb = new TreeBuilder();
 
         return $tb
-            ->root('security:config', 'array')
+            ->root('security', 'array')
                 ->fixXmlConfig('factory', 'factories')
                 ->arrayNode('factories')
                     ->prototype('scalar')->end()
@@ -46,10 +46,10 @@ class Configuration
     public function getMainConfigTree(array $factories)
     {
         $tb = new TreeBuilder();
-        $rootNode = $tb->root('security:config', 'array');
+        $rootNode = $tb->root('security', 'array');
 
         $rootNode
-            ->scalarNode('access_denied_url')->end()
+            ->scalarNode('access_denied_url')->defaultNull()->end()
             ->scalarNode('session_fixation_strategy')->cannotBeEmpty()->defaultValue('migrate')->end()
         ;
 
@@ -67,7 +67,7 @@ class Configuration
         $rootNode
             ->fixXmlConfig('role', 'role_hierarchy')
             ->arrayNode('role_hierarchy')
-                ->containsNameValuePairsWithKeyAttribute('id')
+                ->useAttributeAsKey('id')
                 ->prototype('array')
                     ->performNoDeepMerging()
                     ->beforeNormalization()->ifString()->then(function($v) { return array('value' => $v); })->end()
@@ -103,7 +103,7 @@ class Configuration
                     ->end()
                     ->fixXmlConfig('attribute')
                     ->arrayNode('attributes')
-                        ->containsNameValuePairsWithKeyAttribute('key')
+                        ->useAttributeAsKey('key')
                         ->prototype('scalar')
                             ->beforeNormalization()
                                 ->ifTrue(function($v) { return is_array($v) && isset($v['pattern']); })
@@ -122,6 +122,8 @@ class Configuration
         $rootNode
             ->fixXmlConfig('firewall')
             ->arrayNode('firewalls')
+                ->isRequired()
+                ->requiresAtLeastOneElement()
                 ->disallowNewKeysInSubsequentConfigs()
                 ->useAttributeAsKey('name')
                 ->prototype('array')
@@ -139,6 +141,7 @@ class Configuration
                         ->canBeUnset()
                         ->scalarNode('path')->defaultValue('/logout')->end()
                         ->scalarNode('target')->defaultValue('/')->end()
+                        ->scalarNode('success_handler')->end()
                         ->booleanNode('invalidate_session')->defaultTrue()->end()
                         ->fixXmlConfig('delete_cookie')
                         ->arrayNode('delete_cookies')
@@ -157,7 +160,7 @@ class Configuration
                             ->prototype('scalar')->end()
                         ->end()
                     ->end()
-                    ->booleanNode('anonymous')->end()
+                    ->booleanNode('anonymous')->defaultFalse()->end()
                     ->arrayNode('switch_user')
                         ->scalarNode('provider')->end()
                         ->scalarNode('parameter')->defaultValue('_switch_user')->end()
@@ -183,6 +186,7 @@ class Configuration
             ->fixXmlConfig('provider')
             ->arrayNode('providers')
                 ->disallowNewKeysInSubsequentConfigs()
+                ->isRequired()
                 ->requiresAtLeastOneElement()
                 ->useAttributeAsKey('name')
                 ->prototype('array')
@@ -220,10 +224,13 @@ class Configuration
         $rootNode
             ->fixXmlConfig('encoder')
             ->arrayNode('encoders')
+                ->requiresAtLeastOneElement()
                 ->useAttributeAsKey('class')
                 ->prototype('array')
+                    ->canBeUnset()
+                    ->performNoDeepMerging()
                     ->beforeNormalization()->ifString()->then(function($v) { return array('algorithm' => $v); })->end()
-                    ->scalarNode('algorithm')->isRequired()->cannotBeEmpty()->end()
+                    ->scalarNode('algorithm')->cannotBeEmpty()->end()
                     ->booleanNode('ignore_case')->end()
                     ->booleanNode('encode_as_base64')->end()
                     ->scalarNode('iterations')->end()

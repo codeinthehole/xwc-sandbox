@@ -1,6 +1,6 @@
 <?php
 
-$container->loadFromExtension('app', 'config', array(
+$container->loadFromExtension('framework', array(
     'charset'         => 'UTF-8',
     'error_handler'   => null,
     'csrf-protection' => array('enabled' => true, 'secret' => 'xxxxxxxxxx'),
@@ -18,28 +18,30 @@ $container->loadFromExtension('app', 'config', array(
 ));
 
 // Twig Configuration
-$container->loadFromExtension('twig', 'config', array(
+$container->loadFromExtension('twig', array(
     'debug'            => '%kernel.debug%',
     'strict_variables' => '%kernel.debug%',
 ));
 
 // Doctrine Configuration
 /*
-$container->loadFromExtension('doctrine', 'dbal', array(
-    'dbname'   => 'xxxxxxxx',
-    'user'     => 'xxxxxxxx',
-    'password' => '',
-    'logging'  => '%kernel.debug%',
-));
-$container->loadFromExtension('doctrine', 'orm', array(
-    'auto_generate_proxy_classes' => '%kernel.debug%',
-    'mappings' => array('HelloBundle' => array()),
+$container->loadFromExtension('doctrine', array(
+    'dbal' => array(
+        'dbname'   => 'xxxxxxxx',
+        'user'     => 'xxxxxxxx',
+        'password' => '',
+        'logging'  => '%kernel.debug%',
+    ),
+    'orm' => array(
+        'auto_generate_proxy_classes' => '%kernel.debug%',
+        'mappings' => array('HelloBundle' => array()),
+    ),
 ));
 */
 
 // Swiftmailer Configuration
 /*
-$container->loadFromExtension('swiftmailer', 'config', array(
+$container->loadFromExtension('swiftmailer', array(
     'transport'  => "smtp",
     'encryption' => "ssl",
     'auth_mode'  => "login",

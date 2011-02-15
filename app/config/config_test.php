@@ -2,16 +2,16 @@
 
 $loader->import('config_dev.php');
 
-$container->loadFromExtension('app', 'config', array(
+$container->loadFromExtension('framework', array(
     'error_handler' => false,
     'test'          => true,
 ));
 
-$container->loadFromExtension('webprofiler', 'config', array(
+$container->loadFromExtension('web_profiler', array(
     'toolbar' => false,
     'intercept-redirects' => false,
 ));
 
-$container->loadFromExtension('zend', 'config', array(
+$container->loadFromExtension('zend', array(
     'logger' => array('priority' => 'debug'),
 ));

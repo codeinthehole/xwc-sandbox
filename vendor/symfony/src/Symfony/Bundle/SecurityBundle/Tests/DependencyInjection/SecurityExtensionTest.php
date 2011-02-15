@@ -11,6 +11,10 @@
 
 namespace Symfony\Bundle\SecurityBundle\Tests\DependencyInjection;
 
+use Symfony\Component\DependencyInjection\Reference;
+
+use Symfony\Component\DependencyInjection\Parameter;
+
 use Symfony\Bundle\SecurityBundle\DependencyInjection\SecurityExtension;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
@@ -20,7 +24,7 @@ abstract class SecurityExtensionTest extends \PHPUnit_Framework_TestCase
 
     public function testRolesHierarchy()
     {
-        $container = $this->getContainer('hierarchy');
+        $container = $this->getContainer('container1');
         $this->assertEquals(array(
             'ROLE_ADMIN'       => array('ROLE_USER'),
             'ROLE_SUPER_ADMIN' => array('ROLE_USER', 'ROLE_ADMIN', 'ROLE_ALLOWED_TO_SWITCH'),
@@ -30,22 +34,20 @@ abstract class SecurityExtensionTest extends \PHPUnit_Framework_TestCase
 
     public function testUserProviders()
     {
-        $container = $this->getContainer('provider');
+        $container = $this->getContainer('container1');
 
-        $providers = array_values(array_filter($container->getServiceIds(), function ($key) { return 0 === strpos($key, 'security.authentication.provider.'); }));
+        $providers = array_values(array_filter($container->getServiceIds(), function ($key) { return 0 === strpos($key, 'security.user.provider.'); }));
 
         $expectedProviders = array(
-            'security.authentication.provider.digest',
-            'security.authentication.provider.digest_23374fce51fe846516ff85bfa9add8fe',
-            'security.authentication.provider.basic',
-            'security.authentication.provider.basic_745e8583f784c83c4b4208fd281001f3',
-            'security.authentication.provider.basic_af4bcce7246fb064b8e219034043d88a',
-            'security.authentication.provider.doctrine',
-            'security.authentication.provider.service',
-            'security.authentication.provider.anonymous',
-            'security.authentication.provider.dao',
-            'security.authentication.provider.pre_authenticated',
-            'security.authentication.provider.rememberme',
+            'security.user.provider.default',
+            'security.user.provider.default_foo',
+            'security.user.provider.digest',
+            'security.user.provider.digest_foo',
+            'security.user.provider.basic',
+            'security.user.provider.basic_foo',
+            'security.user.provider.basic_bar',
+            'security.user.provider.doctrine',
+            'security.user.provider.service',
         );
 
         $this->assertEquals(array(), array_diff($expectedProviders, $providers));
@@ -54,7 +56,7 @@ abstract class SecurityExtensionTest extends \PHPUnit_Framework_TestCase
 
     public function testFirewalls()
     {
-        $container = $this->getContainer('firewall');
+        $container = $this->getContainer('container1');
 
         $arguments = $container->getDefinition('security.firewall.map')->getArguments();
         $listeners = array();
@@ -82,7 +84,7 @@ abstract class SecurityExtensionTest extends \PHPUnit_Framework_TestCase
 
     public function testAccess()
     {
-        $container = $this->getContainer('access');
+        $container = $this->getContainer('container1');
 
         $rules = array();
         foreach ($container->getDefinition('security.access_map')->getMethodCalls() as $call) {
@@ -117,6 +119,27 @@ abstract class SecurityExtensionTest extends \PHPUnit_Framework_TestCase
             'FOO' => array('MOO'),
             'ADMIN' => array('USER'),
         ), $container->getParameter('security.role_hierarchy.roles'));
+    }
+
+    public function testEncoders()
+    {
+        $container = $this->getContainer('container1');
+
+        $this->assertEquals(array(array(
+            'JMS\FooBundle\Entity\User1' => array(
+                'class' => new Parameter('security.encoder.plain.class'),
+                'arguments' => array(),
+            ),
+            'JMS\FooBundle\Entity\User2' => array(
+                'class' => new Parameter('security.encoder.digest.class'),
+                'arguments' => array('sha1', true, 5),
+            ),
+            'JMS\FooBundle\Entity\User3' => array(
+                'class' => new Parameter('security.encoder.digest.class'),
+                'arguments' => array('md5', false, 1),
+            ),
+            'JMS\FooBundle\Entity\User4' => new Reference('security.encoder.foo'),
+        )), $container->getDefinition('security.encoder_factory.generic')->getArguments());
     }
 
     protected function getContainer($file)

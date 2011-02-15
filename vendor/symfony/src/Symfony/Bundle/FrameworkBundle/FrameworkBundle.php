@@ -23,6 +23,7 @@ use Symfony\Bundle\FrameworkBundle\DependencyInjection\Compiler\TranslatorPass;
 use Symfony\Bundle\FrameworkBundle\DependencyInjection\Compiler\AddCacheWarmerPass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Compiler\PassConfig;
+use Symfony\Component\DependencyInjection\Scope;
 use Symfony\Component\HttpFoundation\File\File;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Symfony\Component\ClassLoader\ClassCollectionLoader;
@@ -63,11 +64,11 @@ class FrameworkBundle extends Bundle
         }
     }
 
-    public function registerExtensions(ContainerBuilder $container)
+    public function build(ContainerBuilder $container)
     {
-        parent::registerExtensions($container);
+        parent::build($container);
 
-        $container->addScope('request');
+        $container->addScope(new Scope('request'));
 
         $container->addCompilerPass(new RoutingResolverPass());
         $container->addCompilerPass(new ProfilerPass());

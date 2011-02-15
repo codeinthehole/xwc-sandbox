@@ -16,7 +16,7 @@ interface ContainerInterface
     function setParameter($name, $value);
     function enterScope($name);
     function leaveScope($name);
-    function addScope($name, $parentScope = self::SCOPE_CONTAINER);
+    function addScope(ScopeInterface $scope);
     function hasScope($name);
     function isScopeActive($name);
 }
@@ -165,8 +165,10 @@ class Container implements ContainerInterface
             $this->services = call_user_func_array('array_merge', $services);
         }
     }
-    public function addScope($name, $parentScope = self::SCOPE_CONTAINER)
+    public function addScope(ScopeInterface $scope)
     {
+        $name = $scope->getName();
+        $parentScope = $scope->getParentName();
         if (self::SCOPE_CONTAINER === $name || self::SCOPE_PROTOTYPE === $name) {
             throw new \InvalidArgumentException(sprintf('The scope "%s" is reserved.', $name));
         }
@@ -221,10 +223,12 @@ class ContainerAware implements ContainerAwareInterface
 }
 namespace Symfony\Component\HttpKernel\Bundle
 {
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 interface BundleInterface
 {
     function boot();
     function shutdown();
+    public function build(ContainerBuilder $container);
     function getParent();
     function getName();
     function getNamespace();
@@ -235,6 +239,7 @@ namespace Symfony\Component\HttpKernel\Bundle
 {
 use Symfony\Component\DependencyInjection\ContainerAware;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Finder\Finder;
 abstract class Bundle extends ContainerAware implements BundleInterface
@@ -246,6 +251,18 @@ abstract class Bundle extends ContainerAware implements BundleInterface
     }
     public function shutdown()
     {
+    }
+    public function build(ContainerBuilder $container)
+    {
+        $class = $this->getNamespace().'\\DependencyInjection\\'.str_replace('Bundle', 'Extension', $this->getName());
+        if (class_exists($class)) {
+            $extension = new $class();
+            $alias = Container::underscore(str_replace('Bundle', '', $this->getName()));
+            if ($alias !== $extension->getAlias()) {
+                throw new \LogicException(sprintf('The extension alias for the default extension of a bundle must be the underscored version of the bundle name ("%s" vs "%s")', $alias, $extension->getAlias()));
+            }
+            $container->registerExtension($extension);
+        }
     }
     public function getNamespace()
     {
@@ -273,19 +290,6 @@ abstract class Bundle extends ContainerAware implements BundleInterface
         $name = get_class($this);
         $pos = strrpos($name, '\\');
         return $this->name = false === $pos ? $name :  substr($name, $pos + 1);
-    }
-    public function registerExtensions(ContainerBuilder $container)
-    {
-        if (!$dir = realpath($this->getPath().'/DependencyInjection')) {
-            return;
-        }
-        $finder = new Finder();
-        $finder->files()->name('*Extension.php')->in($dir);
-        $prefix = $this->getNamespace().'\\DependencyInjection';
-        foreach ($finder as $file) {
-            $class = $prefix.strtr($file->getPath(), array($dir => '', '/' => '\\')).'\\'.$file->getBasename('.php');
-            $container->registerExtension(new $class());
-        }
     }
     public function registerCommands(Application $application)
     {
@@ -390,7 +394,7 @@ class HttpKernel implements HttpKernelInterface
             return $this->filterResponse($response, $request, 'A "core.request" listener returned a non response object.', $type);
         }
                 if (false === $controller = $this->resolver->getController($request)) {
-            throw new NotFoundHttpException(sprintf('Unable to find the controller for "%s", check your route configuration.', $request->getPathInfo()));
+            throw new NotFoundHttpException(sprintf('Unable to find the controller for path "%s". Maybe you forgot to add the matching route in your routing configuration?', $request->getPathInfo()));
         }
         $event = new Event($this, 'core.controller', array('request_type' => $type, 'request' => $request));
         $controller = $this->dispatcher->filter($event, $controller);
@@ -438,9 +442,9 @@ class HttpKernel implements HttpKernelInterface
 namespace Symfony\Component\HttpKernel
 {
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\DependencyInjection\Loader\LoaderInterface;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\HttpKernel\Bundle\BundleInterface;
+use Symfony\Component\Config\Loader\LoaderInterface;
 interface KernelInterface extends HttpKernelInterface, \Serializable
 {
     function registerRootDir();
@@ -468,9 +472,6 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBag;
-use Symfony\Component\DependencyInjection\Loader\DelegatingLoader;
-use Symfony\Component\DependencyInjection\Loader\LoaderResolver;
-use Symfony\Component\DependencyInjection\Loader\LoaderInterface;
 use Symfony\Component\DependencyInjection\Loader\XmlFileLoader;
 use Symfony\Component\DependencyInjection\Loader\YamlFileLoader;
 use Symfony\Component\DependencyInjection\Loader\IniFileLoader;
@@ -479,6 +480,10 @@ use Symfony\Component\DependencyInjection\Loader\ClosureLoader;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\HttpKernel\Bundle\BundleInterface;
+use Symfony\Component\HttpKernel\Config\FileLocator;
+use Symfony\Component\Config\Loader\LoaderResolver;
+use Symfony\Component\Config\Loader\DelegatingLoader;
+use Symfony\Component\Config\ConfigCache;
 abstract class Kernel implements KernelInterface
 {
     protected $bundles;
@@ -521,7 +526,7 @@ abstract class Kernel implements KernelInterface
         }
                 $this->initializeBundles();
                 $this->initializeContainer();
-        foreach ($this->bundles as $bundle) {
+        foreach ($this->getBundles() as $bundle) {
             $bundle->setContainer($this->container);
             $bundle->boot();
         }
@@ -530,7 +535,7 @@ abstract class Kernel implements KernelInterface
     public function shutdown()
     {
         $this->booted = false;
-        foreach ($this->bundles as $bundle) {
+        foreach ($this->getBundles() as $bundle) {
             $bundle->shutdown();
             $bundle->setContainer(null);
         }
@@ -541,7 +546,11 @@ abstract class Kernel implements KernelInterface
         if (false === $this->booted) {
             $this->boot();
         }
-        return $this->container->get('http_kernel')->handle($request, $type, $catch);
+        return $this->getHttpKernel()->handle($request, $type, $catch);
+    }
+    protected function getHttpKernel()
+    {
+        return $this->container->get('http_kernel');
     }
     public function getBundles()
     {
@@ -549,9 +558,8 @@ abstract class Kernel implements KernelInterface
     }
     public function isClassInActiveBundle($class)
     {
-        foreach ($this->bundles as $bundle) {
-            $bundleClass = get_class($bundle);
-            if (0 === strpos($class, substr($bundleClass, 0, strrpos($bundleClass, '\\')))) {
+        foreach ($this->getBundles() as $bundle) {
+            if (0 === strpos($class, $bundle->getNamespace())) {
                 return true;
             }
         }
@@ -560,7 +568,7 @@ abstract class Kernel implements KernelInterface
     public function getBundle($name, $first = true)
     {
         if (!isset($this->bundleMap[$name])) {
-            throw new \InvalidArgumentException(sprintf('Bundle "%s" does not exist or it is not enabled.', $name));
+            throw new \InvalidArgumentException(sprintf('Bundle "%s" does not exist or it is not enabled. Maybe you forgot to add it in the registerBundles() function of your %s.php file?', $name, get_class($this)));
         }
         if (true === $first) {
             return $this->bundleMap[$name][0];
@@ -651,7 +659,7 @@ abstract class Kernel implements KernelInterface
                 $topMostBundles[$name] = $bundle;
             }
         }
-                if (count($diff = array_diff(array_keys($directChildren), array_keys($this->bundles)))) {
+                if (count($diff = array_values(array_diff(array_keys($directChildren), array_keys($this->bundles))))) {
             throw new \LogicException(sprintf('Bundle "%s" extends bundle "%s", which is not registered.', $directChildren[$diff[0]], $diff[0]));
         }
                 $this->bundleMap = array();
@@ -672,15 +680,14 @@ abstract class Kernel implements KernelInterface
     protected function initializeContainer()
     {
         $class = $this->name.ucfirst($this->environment).($this->debug ? 'Debug' : '').'ProjectContainer';
-        $location = $this->getCacheDir().'/'.$class;
-        $reload = $this->debug ? $this->needsReload($class, $location) : false;
+        $cache = new ConfigCache($this->getCacheDir(), $class, $this->debug);
         $fresh = false;
-        if ($reload || !file_exists($location.'.php')) {
+        if (!$cache->isFresh()) {
             $container = $this->buildContainer();
-            $this->dumpContainer($container, $class, $location.'.php');
+            $this->dumpContainer($cache, $container, $class);
             $fresh = true;
         }
-        require_once $location.'.php';
+        require_once $cache;
         $this->container = new $class();
         $this->container->set('kernel', $this);
         if ($fresh && 'cli' !== php_sapi_name()) {
@@ -717,37 +724,24 @@ abstract class Kernel implements KernelInterface
         }
         return $parameters;
     }
-    protected function needsReload($class, $location)
-    {
-        if (!file_exists($location.'.meta') || !file_exists($location.'.php')) {
-            return true;
-        }
-        $meta = unserialize(file_get_contents($location.'.meta'));
-        $time = filemtime($location.'.php');
-        foreach ($meta as $resource) {
-            if (!$resource->isUptodate($time)) {
-                return true;
-            }
-        }
-        return false;
-    }
     protected function buildContainer()
     {
         $parameterBag = new ParameterBag($this->getKernelParameters());
         $container = new ContainerBuilder($parameterBag);
         foreach ($this->bundles as $bundle) {
-            $bundle->registerExtensions($container);
+            $bundle->build($container);
             if ($this->debug) {
                 $container->addObjectResource($bundle);
             }
         }
+        $container->addObjectResource($this);
         if (null !== $cont = $this->registerContainerConfiguration($this->getContainerLoader($container))) {
             $container->merge($cont);
         }
         $container->compile();
         return $container;
     }
-    protected function dumpContainer(ContainerBuilder $container, $class, $file)
+    protected function dumpContainer(ConfigCache $cache, ContainerBuilder $container, $class)
     {
         foreach (array('cache', 'logs') as $name) {
             $dir = $container->getParameter(sprintf('kernel.%s_dir', $name));
@@ -764,20 +758,16 @@ abstract class Kernel implements KernelInterface
         if (!$this->debug) {
             $content = self::stripComments($content);
         }
-        $this->writeCacheFile($file, $content);
-        if ($this->debug) {
-            $container->addObjectResource($this);
-                        $this->writeCacheFile($this->getCacheDir().'/'.$class.'.meta', serialize($container->getResources()));
-        }
+        $cache->write($content, $container->getResources());
     }
     protected function getContainerLoader(ContainerInterface $container)
     {
         $resolver = new LoaderResolver(array(
-            new XmlFileLoader($container),
-            new YamlFileLoader($container),
-            new IniFileLoader($container),
-            new PhpFileLoader($container),
-            new ClosureLoader($container),
+            new XmlFileLoader($container, new FileLocator($this)),
+            new YamlFileLoader($container, new FileLocator($this)),
+            new IniFileLoader($container, new FileLocator($this)),
+            new PhpFileLoader($container, new FileLocator($this)),
+            new ClosureLoader($container, new FileLocator($this)),
         ));
         return new DelegatingLoader($resolver);
     }
@@ -796,15 +786,6 @@ abstract class Kernel implements KernelInterface
         }
                 $output = preg_replace(array('/\s+$/Sm', '/\n+/S'), "\n", $output);
         return $output;
-    }
-    protected function writeCacheFile($file, $content)
-    {
-        $tmpFile = tempnam(dirname($file), basename($file));
-        if (false !== @file_put_contents($tmpFile, $content) && @rename($tmpFile, $file)) {
-            chmod($file, 0644);
-            return;
-        }
-        throw new \RuntimeException(sprintf('Failed to write cache file "%s".', $file));
     }
     public function serialize()
     {
@@ -1243,14 +1224,34 @@ class Request
     public function duplicate(array $query = null, array $request = null, array $attributes = null, array $cookies = null, array $files = null, array $server = null)
     {
         $dup = clone $this;
-        $dup->initialize(
-            null !== $query ? $query : $this->query->all(),
-            null !== $request ? $request : $this->request->all(),
-            null !== $attributes ? $attributes : $this->attributes->all(),
-            null !== $cookies ? $cookies : $this->cookies->all(),
-            null !== $files ? $files : $this->files->all(),
-            null !== $server ? $server : $this->server->all()
-        );
+        if ($query !== null) {
+          $dup->query = new ParameterBag($query);
+        }
+        if ($request !== null) {
+          $dup->request = new ParameterBag($request);
+        }
+        if ($attributes !== null) {
+          $dup->attributes = new ParameterBag($attributes);
+        }
+        if ($cookies !== null) {
+          $dup->cookies = new ParameterBag($cookies);
+        }
+        if ($files !== null) {
+          $dup->files = new FileBag($files);
+        }
+        if ($server !== null) {
+          $dup->server = new ServerBag($server);
+          $dup->headers = new HeaderBag($dup->server->getHeaders());
+        }
+        $this->languages = null;
+        $this->charsets = null;
+        $this->acceptableContentTypes = null;
+        $this->pathInfo = null;
+        $this->requestUri = null;
+        $this->baseUrl = null;
+        $this->basePath = null;
+        $this->method = null;
+        $this->format = null;
         return $dup;
     }
     public function __clone()
@@ -1949,6 +1950,76 @@ class MapFileClassLoader
         if (isset($this->map[$class])) {
             require $this->map[$class];
         }
+    }
+}
+}
+namespace Symfony\Component\Config
+{
+class ConfigCache
+{
+    protected $debug;
+    protected $cacheDir;
+    protected $file;
+    public function __construct($cacheDir, $file, $debug)
+    {
+        $this->cacheDir = $cacheDir;
+        $this->file = $file;
+        $this->debug = (Boolean) $debug;
+    }
+    public function __toString()
+    {
+        return $this->getCacheFile();
+    }
+    public function isFresh()
+    {
+        $file = $this->getCacheFile();
+        if (!file_exists($file)) {
+            return false;
+        }
+        if (!$this->debug) {
+            return true;
+        }
+        $metadata = $this->getCacheFile('meta');
+        if (!file_exists($metadata)) {
+            return false;
+        }
+        $time = filemtime($file);
+        $meta = unserialize(file_get_contents($metadata));
+        foreach ($meta as $resource) {
+            if (!$resource->isFresh($time)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    public function write($content, array $metadata = null)
+    {
+        $file = $this->getCacheFile();
+        $dir = dirname($file);
+        if (!is_dir($dir)) {
+            if (false === @mkdir($dir, 0777, true)) {
+                throw new \RuntimeException(sprintf('Unable to create the %s directory', $dir));
+            }
+        } elseif (!is_writable($dir)) {
+            throw new \RuntimeException(sprintf('Unable to write in the %s directory', $dir));
+        }
+        $tmpFile = tempnam(dirname($file), basename($file));
+        if (false !== @file_put_contents($tmpFile, $content) && @rename($tmpFile, $file)) {
+            chmod($file, 0666);
+        } else {
+            throw new \RuntimeException(sprintf('Failed to write cache file "%s".', $this->file));
+        }
+        if (null !== $metadata && true === $this->debug) {
+            $file = $this->getCacheFile('meta');
+            $tmpFile = tempnam(dirname($file), basename($file));
+            if (false !== @file_put_contents($tmpFile, serialize($metadata)) && @rename($tmpFile, $file)) {
+                chmod($file, 0666);
+            }
+        }
+    }
+    protected function getCacheFile($extension = 'php')
+    {
+        return $this->cacheDir.'/'.$this->file.'.'.$extension;
     }
 }
 }

@@ -11,12 +11,15 @@
 
 namespace Symfony\Bundle\FrameworkBundle\Templating\Loader;
 
+use Symfony\Component\Config\FileLocatorInterface;
+use Symfony\Component\Templating\TemplateReferenceInterface;
+
 /**
  * CachedTemplateLocator locates templates in the cache.
  *
  * @author Fabien Potencier <fabien.potencier@symfony-project.com>
  */
-class CachedTemplateLocator implements TemplateLocatorInterface
+class CachedTemplateLocator implements FileLocatorInterface
 {
     protected $templates;
 
@@ -33,15 +36,19 @@ class CachedTemplateLocator implements TemplateLocatorInterface
     }
 
     /**
-     * Locates a template on the filesystem.
+     * Returns a full path for a given file.
      *
-     * @param array $template The template name as an array
+     * @param TemplateReferenceInterface $template    The template
+     * @param string                     $currentPath Unused
+     * @param Boolean                    $first       Unused
      *
-     * @return string An absolute file name
+     * @return string The full path for the file
+     *
+     * @throws \InvalidArgumentException When file is not found
      */
-    public function locate($template)
+    public function locate($template, $currentPath = null, $first = true)
     {
-        $key = md5(serialize($template));
+        $key = $template->getSignature();
 
         if (!isset($this->templates[$key])) {
             throw new \InvalidArgumentException(sprintf('Unable to find template "%s".', json_encode($template)));

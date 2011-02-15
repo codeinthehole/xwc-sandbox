@@ -63,7 +63,7 @@ class PhpEngine implements EngineInterface, \ArrayAccess
     /**
      * Renders a template.
      *
-     * @param mixed $name       A template name
+     * @param mixed $name       A template name or a TemplateReferenceInterface instance
      * @param array $parameters An array of parameters to pass to the template
      *
      * @return string The evaluated template as a string
@@ -73,19 +73,16 @@ class PhpEngine implements EngineInterface, \ArrayAccess
      */
     public function render($name, array $parameters = array())
     {
-        $template = $this->load($name);
-
-        $key = md5(serialize($template));
-
+        $storage = $this->load($name);
+        $key = md5(serialize($storage));
         $this->current = $key;
         $this->parents[$key] = null;
 
         // attach the global variables
         $parameters = array_replace($this->getGlobals(), $parameters);
-
         // render
-        if (false === $content = $this->evaluate($template, $parameters)) {
-            throw new \RuntimeException(sprintf('The template "%s" cannot be rendered.', json_encode($template)));
+        if (false === $content = $this->evaluate($storage, $parameters)) {
+            throw new \RuntimeException(sprintf('The template "%s" cannot be rendered.', json_encode($name)));
         }
 
         // decorator
@@ -105,7 +102,7 @@ class PhpEngine implements EngineInterface, \ArrayAccess
     /**
      * Returns true if the template exists.
      *
-     * @param mixed $name A template name
+     * @param mixed $name A template name or a TemplateReferenceInterface instance
      *
      * @return Boolean true if the template exists, false otherwise
      */
@@ -123,15 +120,15 @@ class PhpEngine implements EngineInterface, \ArrayAccess
     /**
      * Returns true if this class is able to render the given template.
      *
-     * @param mixed $name A template name
+     * @param mixed $name A template name or a TemplateReferenceInterface instance
      *
-     * @return Boolean True if this class supports the given resource, false otherwise
+     * @return Boolean true if this class supports the given resource, false otherwise
      */
     public function supports($name)
     {
         $template = $this->parser->parse($name);
 
-        return 'php' === $template['engine'];
+        return 'php' === $template->get('engine');
     }
 
     /**
@@ -221,6 +218,11 @@ class PhpEngine implements EngineInterface, \ArrayAccess
         }
     }
 
+    /**
+     * Sets the helpers.
+     *
+     * @params Helper[] $helpers An array of helper
+     */
     public function setHelpers(array $helpers)
     {
         $this->helpers = array();
@@ -286,7 +288,8 @@ class PhpEngine implements EngineInterface, \ArrayAccess
     /**
      * Escapes a string by using the current charset.
      *
-     * @param mixed $value A variable to escape
+     * @param mixed  $value   A variable to escape
+     * @param string $context The context name
      *
      * @return string The escaped value
      */
@@ -440,6 +443,17 @@ class PhpEngine implements EngineInterface, \ArrayAccess
         );
     }
 
+    /**
+     * Convert a string from one encoding to another.
+     *
+     * @param string $string The string to convert
+     * @param string $to     The input encoding
+     * @param string $from   The output encoding
+     *
+     * @return string The string with the new encoding
+     *
+     * @throws \RuntimeException if no suitable encoding function is found (iconv or mbstring)
+     */
     public function convertEncoding($string, $to, $from)
     {
         if (function_exists('iconv')) {
@@ -464,7 +478,7 @@ class PhpEngine implements EngineInterface, \ArrayAccess
     /**
      * Loads the given template.
      *
-     * @param mixed $name A template name
+     * @param mixed $name A template name or a TemplateReferenceInterface instance
      *
      * @return Storage A Storage instance
      *
@@ -474,18 +488,17 @@ class PhpEngine implements EngineInterface, \ArrayAccess
     {
         $template = $this->parser->parse($name);
 
-        $key = md5(serialize($template));
+        $key = $template->getSignature();
         if (isset($this->cache[$key])) {
             return $this->cache[$key];
         }
 
-        // load
-        $template = $this->loader->load($template);
+        $storage = $this->loader->load($template);
 
-        if (false === $template) {
-            throw new \InvalidArgumentException(sprintf('The template "%s" does not exist.', $name));
+        if (false === $storage) {
+            throw new \InvalidArgumentException(sprintf('The template "%s" does not exist.', is_string($name) ? $name : json_encode($name)));
         }
 
-        return $this->cache[$key] = $template;
+        return $this->cache[$key] = $storage;
     }
 }

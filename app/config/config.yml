@@ -1,4 +1,4 @@
-app.config:
+framework:
     charset:       UTF-8
     error_handler: null
     csrf_protection:
@@ -13,23 +13,24 @@ app.config:
         auto_start:     true
 
 # Twig Configuration
-twig.config:
+twig:
     debug:            %kernel.debug%
     strict_variables: %kernel.debug%
 
 ## Doctrine Configuration
-#doctrine.dbal:
-#    dbname:   xxxxxxxx
-#    user:     xxxxxxxx
-#    password: ~
-#    logging:  %kernel.debug%
-#doctrine.orm:
-#    auto_generate_proxy_classes: %kernel.debug%
-#    mappings:
-#        HelloBundle: ~
+#doctrine:
+#   dbal:
+#       dbname:   xxxxxxxx
+#       user:     xxxxxxxx
+#       password: ~
+#       logging:  %kernel.debug%
+#   orm:
+#       auto_generate_proxy_classes: %kernel.debug%
+#       mappings:
+#           HelloBundle: ~
 
 ## Swiftmailer Configuration
-#swiftmailer.config:
+#swiftmailer:
 #    transport:  smtp
 #    encryption: ssl
 #    auth_mode:  login

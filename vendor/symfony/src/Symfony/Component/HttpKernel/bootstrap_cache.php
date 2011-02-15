@@ -2,9 +2,9 @@
 namespace Symfony\Component\HttpKernel
 {
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\DependencyInjection\Loader\LoaderInterface;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\HttpKernel\Bundle\BundleInterface;
+use Symfony\Component\Config\Loader\LoaderInterface;
 interface KernelInterface extends HttpKernelInterface, \Serializable
 {
     function registerRootDir();
@@ -32,9 +32,6 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBag;
-use Symfony\Component\DependencyInjection\Loader\DelegatingLoader;
-use Symfony\Component\DependencyInjection\Loader\LoaderResolver;
-use Symfony\Component\DependencyInjection\Loader\LoaderInterface;
 use Symfony\Component\DependencyInjection\Loader\XmlFileLoader;
 use Symfony\Component\DependencyInjection\Loader\YamlFileLoader;
 use Symfony\Component\DependencyInjection\Loader\IniFileLoader;
@@ -43,6 +40,10 @@ use Symfony\Component\DependencyInjection\Loader\ClosureLoader;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\HttpKernel\Bundle\BundleInterface;
+use Symfony\Component\HttpKernel\Config\FileLocator;
+use Symfony\Component\Config\Loader\LoaderResolver;
+use Symfony\Component\Config\Loader\DelegatingLoader;
+use Symfony\Component\Config\ConfigCache;
 abstract class Kernel implements KernelInterface
 {
     protected $bundles;
@@ -85,7 +86,7 @@ abstract class Kernel implements KernelInterface
         }
                 $this->initializeBundles();
                 $this->initializeContainer();
-        foreach ($this->bundles as $bundle) {
+        foreach ($this->getBundles() as $bundle) {
             $bundle->setContainer($this->container);
             $bundle->boot();
         }
@@ -94,7 +95,7 @@ abstract class Kernel implements KernelInterface
     public function shutdown()
     {
         $this->booted = false;
-        foreach ($this->bundles as $bundle) {
+        foreach ($this->getBundles() as $bundle) {
             $bundle->shutdown();
             $bundle->setContainer(null);
         }
@@ -105,7 +106,11 @@ abstract class Kernel implements KernelInterface
         if (false === $this->booted) {
             $this->boot();
         }
-        return $this->container->get('http_kernel')->handle($request, $type, $catch);
+        return $this->getHttpKernel()->handle($request, $type, $catch);
+    }
+    protected function getHttpKernel()
+    {
+        return $this->container->get('http_kernel');
     }
     public function getBundles()
     {
@@ -113,9 +118,8 @@ abstract class Kernel implements KernelInterface
     }
     public function isClassInActiveBundle($class)
     {
-        foreach ($this->bundles as $bundle) {
-            $bundleClass = get_class($bundle);
-            if (0 === strpos($class, substr($bundleClass, 0, strrpos($bundleClass, '\\')))) {
+        foreach ($this->getBundles() as $bundle) {
+            if (0 === strpos($class, $bundle->getNamespace())) {
                 return true;
             }
         }
@@ -124,7 +128,7 @@ abstract class Kernel implements KernelInterface
     public function getBundle($name, $first = true)
     {
         if (!isset($this->bundleMap[$name])) {
-            throw new \InvalidArgumentException(sprintf('Bundle "%s" does not exist or it is not enabled.', $name));
+            throw new \InvalidArgumentException(sprintf('Bundle "%s" does not exist or it is not enabled. Maybe you forgot to add it in the registerBundles() function of your %s.php file?', $name, get_class($this)));
         }
         if (true === $first) {
             return $this->bundleMap[$name][0];
@@ -215,7 +219,7 @@ abstract class Kernel implements KernelInterface
                 $topMostBundles[$name] = $bundle;
             }
         }
-                if (count($diff = array_diff(array_keys($directChildren), array_keys($this->bundles)))) {
+                if (count($diff = array_values(array_diff(array_keys($directChildren), array_keys($this->bundles))))) {
             throw new \LogicException(sprintf('Bundle "%s" extends bundle "%s", which is not registered.', $directChildren[$diff[0]], $diff[0]));
         }
                 $this->bundleMap = array();
@@ -236,15 +240,14 @@ abstract class Kernel implements KernelInterface
     protected function initializeContainer()
     {
         $class = $this->name.ucfirst($this->environment).($this->debug ? 'Debug' : '').'ProjectContainer';
-        $location = $this->getCacheDir().'/'.$class;
-        $reload = $this->debug ? $this->needsReload($class, $location) : false;
+        $cache = new ConfigCache($this->getCacheDir(), $class, $this->debug);
         $fresh = false;
-        if ($reload || !file_exists($location.'.php')) {
+        if (!$cache->isFresh()) {
             $container = $this->buildContainer();
-            $this->dumpContainer($container, $class, $location.'.php');
+            $this->dumpContainer($cache, $container, $class);
             $fresh = true;
         }
-        require_once $location.'.php';
+        require_once $cache;
         $this->container = new $class();
         $this->container->set('kernel', $this);
         if ($fresh && 'cli' !== php_sapi_name()) {
@@ -281,37 +284,24 @@ abstract class Kernel implements KernelInterface
         }
         return $parameters;
     }
-    protected function needsReload($class, $location)
-    {
-        if (!file_exists($location.'.meta') || !file_exists($location.'.php')) {
-            return true;
-        }
-        $meta = unserialize(file_get_contents($location.'.meta'));
-        $time = filemtime($location.'.php');
-        foreach ($meta as $resource) {
-            if (!$resource->isUptodate($time)) {
-                return true;
-            }
-        }
-        return false;
-    }
     protected function buildContainer()
     {
         $parameterBag = new ParameterBag($this->getKernelParameters());
         $container = new ContainerBuilder($parameterBag);
         foreach ($this->bundles as $bundle) {
-            $bundle->registerExtensions($container);
+            $bundle->build($container);
             if ($this->debug) {
                 $container->addObjectResource($bundle);
             }
         }
+        $container->addObjectResource($this);
         if (null !== $cont = $this->registerContainerConfiguration($this->getContainerLoader($container))) {
             $container->merge($cont);
         }
         $container->compile();
         return $container;
     }
-    protected function dumpContainer(ContainerBuilder $container, $class, $file)
+    protected function dumpContainer(ConfigCache $cache, ContainerBuilder $container, $class)
     {
         foreach (array('cache', 'logs') as $name) {
             $dir = $container->getParameter(sprintf('kernel.%s_dir', $name));
@@ -328,20 +318,16 @@ abstract class Kernel implements KernelInterface
         if (!$this->debug) {
             $content = self::stripComments($content);
         }
-        $this->writeCacheFile($file, $content);
-        if ($this->debug) {
-            $container->addObjectResource($this);
-                        $this->writeCacheFile($this->getCacheDir().'/'.$class.'.meta', serialize($container->getResources()));
-        }
+        $cache->write($content, $container->getResources());
     }
     protected function getContainerLoader(ContainerInterface $container)
     {
         $resolver = new LoaderResolver(array(
-            new XmlFileLoader($container),
-            new YamlFileLoader($container),
-            new IniFileLoader($container),
-            new PhpFileLoader($container),
-            new ClosureLoader($container),
+            new XmlFileLoader($container, new FileLocator($this)),
+            new YamlFileLoader($container, new FileLocator($this)),
+            new IniFileLoader($container, new FileLocator($this)),
+            new PhpFileLoader($container, new FileLocator($this)),
+            new ClosureLoader($container, new FileLocator($this)),
         ));
         return new DelegatingLoader($resolver);
     }
@@ -360,15 +346,6 @@ abstract class Kernel implements KernelInterface
         }
                 $output = preg_replace(array('/\s+$/Sm', '/\n+/S'), "\n", $output);
         return $output;
-    }
-    protected function writeCacheFile($file, $content)
-    {
-        $tmpFile = tempnam(dirname($file), basename($file));
-        if (false !== @file_put_contents($tmpFile, $content) && @rename($tmpFile, $file)) {
-            chmod($file, 0644);
-            return;
-        }
-        throw new \RuntimeException(sprintf('Failed to write cache file "%s".', $file));
     }
     public function serialize()
     {
@@ -403,6 +380,7 @@ class HttpCache implements HttpKernelInterface
     protected $store;
     protected $request;
     protected $esi;
+    protected $esiTtls;
     public function __construct(HttpKernelInterface $kernel, StoreInterface $store, Esi $esi = null, array $options = array())
     {
         $this->store = $store;
@@ -440,6 +418,7 @@ class HttpCache implements HttpKernelInterface
                 if (HttpKernelInterface::MASTER_REQUEST === $type) {
             $this->traces = array();
             $this->request = $request;
+            $this->esiTtls = array();
         }
         $path = $request->getPathInfo();
         if ($qs = $request->getQueryString()) {
@@ -458,7 +437,27 @@ class HttpCache implements HttpKernelInterface
         if (HttpKernelInterface::MASTER_REQUEST === $type && $this->options['debug']) {
             $response->headers->set('X-Symfony-Cache', $this->getLog());
         }
+        if (null !== $this->esi) {
+            $this->addEsiTtl($response);
+            if ($request === $this->request) {
+                $this->updateResponseCacheControl($response);
+            }
+        }
         return $response;
+    }
+    protected function addEsiTtl(Response $response)
+    {
+        $this->esiTtls[] = $response->isValidateable() ? -1 : $response->getTtl();
+    }
+    protected function updateResponseCacheControl(Response $response)
+    {
+        $ttl = min($this->esiTtls);
+        if (-1 === $ttl) {
+            $response->headers->set('Cache-Control', 'no-cache, must-revalidate');
+        } else {
+            $response->setSharedMaxAge($ttl);
+            $response->setMaxAge(0);
+        }
     }
     protected function pass(Request $request, $catch = false)
     {
@@ -1002,7 +1001,7 @@ class Esi
         $subRequest = Request::create($uri, 'get', array(), $cache->getRequest()->cookies->all(), array(), $cache->getRequest()->server->all());
         try {
             $response = $cache->handle($subRequest, HttpKernelInterface::SUB_REQUEST, true);
-            if (200 != $response->getStatusCode()) {
+            if (!$response->isSuccessful()) {
                 throw new \RuntimeException(sprintf('Error when rendering "%s" (Status code is %s).', $subRequest->getUri(), $response->getStatusCode()));
             }
             return $response->getContent();
@@ -1459,14 +1458,34 @@ class Request
     public function duplicate(array $query = null, array $request = null, array $attributes = null, array $cookies = null, array $files = null, array $server = null)
     {
         $dup = clone $this;
-        $dup->initialize(
-            null !== $query ? $query : $this->query->all(),
-            null !== $request ? $request : $this->request->all(),
-            null !== $attributes ? $attributes : $this->attributes->all(),
-            null !== $cookies ? $cookies : $this->cookies->all(),
-            null !== $files ? $files : $this->files->all(),
-            null !== $server ? $server : $this->server->all()
-        );
+        if ($query !== null) {
+          $dup->query = new ParameterBag($query);
+        }
+        if ($request !== null) {
+          $dup->request = new ParameterBag($request);
+        }
+        if ($attributes !== null) {
+          $dup->attributes = new ParameterBag($attributes);
+        }
+        if ($cookies !== null) {
+          $dup->cookies = new ParameterBag($cookies);
+        }
+        if ($files !== null) {
+          $dup->files = new FileBag($files);
+        }
+        if ($server !== null) {
+          $dup->server = new ServerBag($server);
+          $dup->headers = new HeaderBag($dup->server->getHeaders());
+        }
+        $this->languages = null;
+        $this->charsets = null;
+        $this->acceptableContentTypes = null;
+        $this->pathInfo = null;
+        $this->requestUri = null;
+        $this->baseUrl = null;
+        $this->basePath = null;
+        $this->method = null;
+        $this->format = null;
         return $dup;
     }
     public function __clone()
@@ -1918,10 +1937,10 @@ namespace Symfony\Component\HttpFoundation
 class ResponseHeaderBag extends HeaderBag
 {
     protected $computedCacheControl = array();
-    public function __construct(array $parameters = array())
+    public function __construct(array $headers = array())
     {
                         parent::__construct();
-        $this->replace($parameters);
+        $this->replace($headers);
     }
     public function replace(array $headers = array())
     {
@@ -1956,7 +1975,7 @@ class ResponseHeaderBag extends HeaderBag
     }
     public function clearCookie($name, $path = null, $domain = null)
     {
-        $this->setCookie(new Cookie($name, null, time() - 86400, $path, $domain));
+        $this->setCookie(new Cookie($name, null, 1, $path, $domain));
     }
     protected function computeCacheControlValue()
     {

@@ -11,8 +11,10 @@
 
 namespace Symfony\Component\Security\Http\Firewall;
 
+use Symfony\Component\Security\Http\Logout\LogoutSuccessHandlerInterface;
+
 use Symfony\Component\Security\Http\Logout\LogoutHandlerInterface;
-use Symfony\Component\Security\Core\SecurityContext;
+use Symfony\Component\Security\Core\SecurityContextInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\EventDispatcher\EventInterface;
 use Symfony\Component\HttpFoundation\Response;
@@ -28,19 +30,21 @@ class LogoutListener implements ListenerInterface
     protected $logoutPath;
     protected $targetUrl;
     protected $handlers;
+    protected $successHandler;
 
     /**
      * Constructor
      *
-     * @param SecurityContext $securityContext
+     * @param SecurityContextInterface $securityContext
      * @param string $logoutPath The path that starts the logout process
      * @param string $targetUrl  The URL to redirect to after logout
      */
-    public function __construct(SecurityContext $securityContext, $logoutPath, $targetUrl = '/')
+    public function __construct(SecurityContextInterface $securityContext, $logoutPath, $targetUrl = '/', LogoutSuccessHandlerInterface $successHandler = null)
     {
         $this->securityContext = $securityContext;
         $this->logoutPath = $logoutPath;
         $this->targetUrl = $targetUrl;
+        $this->successHandler = $successHandler;
         $this->handlers = array();
     }
 
@@ -86,8 +90,16 @@ class LogoutListener implements ListenerInterface
             return;
         }
 
-        $response = new Response();
-        $response->setRedirect(0 !== strpos($this->targetUrl, 'http') ? $request->getUriForPath($this->targetUrl) : $this->targetUrl, 302);
+        if (null !== $this->successHandler) {
+            $response = $this->successHandler->onLogoutSuccess($event, $request);
+
+            if (!$response instanceof Response) {
+                throw new \RuntimeException('Logout Success Handler did not return a Response.');
+            }
+        } else {
+            $response = new Response();
+            $response->setRedirect(0 !== strpos($this->targetUrl, 'http') ? $request->getUriForPath($this->targetUrl) : $this->targetUrl, 302);
+        }
 
         // handle multiple logout attempts gracefully
         if ($token = $this->securityContext->getToken()) {

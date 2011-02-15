@@ -1,7 +1,7 @@
 <?php
 
 use Symfony\Component\HttpKernel\Kernel;
-use Symfony\Component\DependencyInjection\Loader\LoaderInterface;
+use Symfony\Component\Config\Loader\LoaderInterface;
 
 class AppKernel extends Kernel
 {
@@ -22,7 +22,7 @@ class AppKernel extends Kernel
             new Sensio\HelloBundle\HelloBundle(),
         );
 
-        if ('dev' === $this->getEnvironment()) {
+        if (in_array($this->getEnvironment(), array('dev', 'test'))) {
             $bundles[] = new Symfony\Bundle\WebProfilerBundle\WebProfilerBundle();
         }
 

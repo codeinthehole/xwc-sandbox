@@ -16,9 +16,9 @@ fi
 cp -r $DIR/vendor_full/* .
 
 # Default configuration
-cp $DIR/../symfony-bootstrapper/src/skeleton/application/php/config/config* $DIR/app/config/
-cp $DIR/../symfony-bootstrapper/src/skeleton/application/yml/config/config* $DIR/app/config/
-cp $DIR/../symfony-bootstrapper/src/skeleton/application/xml/config/config* $DIR/app/config/
+cp $DIR/../../symfony-bootstrapper/src/skeleton/application/php/config/config* $DIR/app/config/
+cp $DIR/../../symfony-bootstrapper/src/skeleton/application/yml/config/config* $DIR/app/config/
+cp $DIR/../../symfony-bootstrapper/src/skeleton/application/xml/config/config* $DIR/app/config/
 
 # Doctrine ORM
 cd doctrine && rm -rf UPGRADE* build* bin tests tools lib/vendor
