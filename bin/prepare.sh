@@ -20,6 +20,10 @@ cp $DIR/../../symfony-bootstrapper/src/skeleton/application/php/config/config* $
 cp $DIR/../../symfony-bootstrapper/src/skeleton/application/yml/config/config* $DIR/app/config/
 cp $DIR/../../symfony-bootstrapper/src/skeleton/application/xml/config/config* $DIR/app/config/
 
+# Assetic
+cd assetic && rm -rf tests
+cd $TARGET
+
 # Doctrine ORM
 cd doctrine && rm -rf UPGRADE* build* bin tests tools lib/vendor
 cd $TARGET
