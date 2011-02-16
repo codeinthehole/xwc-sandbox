@@ -38,6 +38,9 @@ install_git()
 # Assetic
 install_git assetic git://github.com/kriswallsmith/assetic.git origin/master
 
+# Symfony
+install_git symfony git://github.com/fabpot/symfony.git origin/master
+
 # Doctrine ORM
 install_git doctrine git://github.com/doctrine/doctrine2.git 2.0.1
 
