@@ -2,3 +2,9 @@
 /vendor_full/
 /app/cache/*
 /app/logs/*
+
+# Ignore Eclipse specific files
+.buildpath
+.project
+.settings
+
