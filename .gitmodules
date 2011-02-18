@@ -1,0 +1,3 @@
+[submodule "src/Tangent/XwcCoreBundle"]
+	path = src/Tangent/XwcCoreBundle
+	url = git@github.com:tangentlabs/XwcCoreBundle.git
