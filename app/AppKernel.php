@@ -20,6 +20,7 @@ class AppKernel extends Kernel
 
             // register your bundles
             new Sensio\HelloBundle\HelloBundle(),
+            new Tangent\XwcCoreBundle\XwcCoreBundle(),
         );
 
         if (in_array($this->getEnvironment(), array('dev', 'test'))) {

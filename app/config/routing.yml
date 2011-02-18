@@ -4,3 +4,6 @@ homepage:
 
 hello:
     resource: @HelloBundle/Resources/config/routing.yml
+
+xwc:
+    resource: @XwcCoreBundle/Resources/config/routing.yml
