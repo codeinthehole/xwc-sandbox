@@ -1,9 +1,5 @@
-homepage:
-    pattern:  /
-    defaults: { _controller: FrameworkBundle:Default:index }
-
 hello:
-    resource: @HelloBundle/Resources/config/routing.yml
+    resource: "@HelloBundle/Resources/config/routing.yml"
 
 xwc:
-    resource: @XwcCoreBundle/Resources/config/routing.yml
+    resource: "@XwcCoreBundle/Resources/config/routing.yml"
