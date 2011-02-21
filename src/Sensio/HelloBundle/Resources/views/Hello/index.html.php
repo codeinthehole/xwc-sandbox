@@ -1,3 +1,3 @@
 <?php $view->extend('HelloBundle::layout.html.php') ?>
 
-Hello <?php echo $name ?>!
+Hello <?php echo $view->escape($name) ?>!

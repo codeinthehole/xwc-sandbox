@@ -13,4 +13,9 @@ class HelloController extends Controller
         // render a PHP template instead
         // return $this->render('HelloBundle:Hello:index.html.php', array('name' => $name));
     }
+
+    public function welcomeAction()
+    {
+        return $this->render('HelloBundle:Hello:welcome.html.twig');
+    }
 }
