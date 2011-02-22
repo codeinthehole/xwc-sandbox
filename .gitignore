@@ -2,15 +2,8 @@
 /vendor_full/
 /app/cache/*
 /app/logs/*
-<<<<<<< HEAD
-
-# Ignore Eclipse specific files
+*.swp
 .buildpath
 .project
 .settings
 
-=======
-.buildpath
-.project
-.settings/
->>>>>>> 0ebab42cc9ae615ca6c5ff7231613252771f7596
